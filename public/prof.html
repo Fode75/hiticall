@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Heticall — Espace professeur</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <img src="logo.png" alt="HETIC">
+    <div class="brand">Hetic<span>all</span></div>
+  </header>
+  <main>
+    <h1>Espace professeur</h1>
+    <p class="sub">Ouvre l'appel : les élèves ont 15 minutes pour scanner le code.</p>
+
+    <label for="pwd">Mot de passe</label>
+    <input id="pwd" type="password" placeholder="hetic (par défaut)">
+    <button id="open">Ouvrir l'appel</button>
+    <div id="msg" class="msg"></div>
+
+    <div id="live" class="card" style="display:none">
+      <img id="qr" alt="QR code" width="220" height="220">
+      <p>Code : <strong id="code"></strong></p>
+      <p><a id="link" target="_blank" style="font-size:13px"></a></p>
+      <div class="timer" id="timer"></div>
+    </div>
+
+    <table id="table" style="display:none">
+      <thead><tr><th>Élève</th><th>Heure</th><th>Statut</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const headers = () => ({ "Content-Type": "application/json", "x-prof-password": $("pwd").value });
+    let closesAt = null;
+
+    $("open").addEventListener("click", async () => {
+      const res = await fetch("/api/session", { method: "POST", headers: headers() });
+      if (!res.ok) {
+        $("msg").className = "msg ko";
+        $("msg").textContent = (await res.json()).error;
+        return;
+      }
+      $("msg").className = "msg";
+      refresh();
+    });
+
+    async function refresh() {
+      const s = await fetch("/api/session", { headers: headers() });
+      if (!s.ok) return;
+      const session = await s.json();
+      if (!session.started) return;
+
+      closesAt = session.closesAt;
+      $("live").style.display = "block";
+      $("table").style.display = "table";
+      $("qr").src = session.qr;
+      $("code").textContent = session.code;
+      $("link").textContent = session.url;
+      $("link").href = session.url;
+
+      const r = await fetch("/api/records", { headers: headers() });
+      const records = await r.json();
+      const rows = $("rows");
+      rows.innerHTML = "";
+      records.forEach((rec) => {
+        const tr = document.createElement("tr");
+        const cells = [rec.name, new Date(rec.time).toLocaleTimeString("fr-FR")];
+        cells.forEach((text) => {
+          const td = document.createElement("td");
+          td.textContent = text; // textContent : pas d'injection HTML
+          tr.appendChild(td);
+        });
+        const status = document.createElement("td");
+        status.textContent = rec.status === "present" ? "Présent" : "Absent";
+        status.className = "tag-" + rec.status;
+        tr.appendChild(status);
+
+        const action = document.createElement("td");
+        const btn = document.createElement("button");
+        btn.className = "small";
+        btn.textContent = rec.status === "present" ? "Marquer absent" : "Marquer présent";
+        btn.addEventListener("click", async () => {
+          await fetch("/api/records/" + rec.id, {
+            method: "PATCH",
+            headers: headers(),
+            body: JSON.stringify({ status: rec.status === "present" ? "absent" : "present" }),
+          });
+          refresh();
+        });
+        action.appendChild(btn);
+        tr.appendChild(action);
+        rows.appendChild(tr);
+      });
+    }
+
+    setInterval(() => {
+      if (!closesAt) return;
+      const left = Math.max(0, closesAt - Date.now());
+      const m = String(Math.floor(left / 60000)).padStart(2, "0");
+      const s = String(Math.floor((left % 60000) / 1000)).padStart(2, "0");
+      $("timer").textContent = left > 0 ? `${m}:${s}` : "Appel fermé";
+    }, 500);
+    setInterval(() => { if (closesAt) refresh(); }, 3000);
+  </script>
+</body>
+</html>

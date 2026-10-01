@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Heticall</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <img src="logo.png" alt="HETIC">
+    <div class="brand">Hetic<span>all</span></div>
+  </header>
+  <main>
+    <h1>Présence</h1>
+    <p class="sub" id="sub">Scanne le QR code affiché par ton professeur.</p>
+
+    <div id="setup" style="display:none">
+      <label for="name">Prénom et nom (une seule fois)</label>
+      <input id="name" placeholder="Fodé Dupont" autocomplete="name">
+      <button id="save">Valider ma présence</button>
+    </div>
+
+    <div id="msg" class="msg"></div>
+    <p><a href="#" id="change" style="display:none;font-size:13px">Ce n'est pas moi / changer de nom</a></p>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const code = new URLSearchParams(location.search).get("code");
+
+    function show(text, ok) {
+      $("msg").className = "msg " + (ok ? "ok" : "ko");
+      $("msg").textContent = text;
+    }
+
+    async function checkin(name) {
+      $("setup").style.display = "none";
+      $("sub").textContent = "Enregistrement…";
+      try {
+        const res = await fetch("/api/checkin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, code }),
+        });
+        const data = await res.json();
+        $("sub").textContent = name;
+        if (res.ok) show("Présence enregistrée. Bon cours !", true);
+        else show(data.error, res.status === 409); // 409 = déjà enregistré
+      } catch (e) {
+        show("Connexion impossible. Réessaie.", false);
+      }
+      $("change").style.display = "inline";
+    }
+
+    function start() {
+      if (!code) return; // pas de code : on affiche juste la consigne
+      const name = localStorage.getItem("hetic-name");
+      if (name) checkin(name); // déjà connu : présent automatiquement
+      else {
+        $("sub").textContent = "Première fois : dis-nous qui tu es, on s'en souviendra.";
+        $("setup").style.display = "block";
+      }
+    }
+
+    $("save").addEventListener("click", () => {
+      const name = $("name").value.trim();
+      if (!name) return show("Entre ton nom.", false);
+      localStorage.setItem("hetic-name", name);
+      checkin(name);
+    });
+
+    $("change").addEventListener("click", (e) => {
+      e.preventDefault();
+      localStorage.removeItem("hetic-name");
+      location.reload();
+    });
+
+    start();
+  </script>
+</body>
+</html>
